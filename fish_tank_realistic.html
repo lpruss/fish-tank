@@ -6,20 +6,22 @@
 <style>
 * { margin: 0; padding: 0; box-sizing: border-box; }
 body { overflow: hidden; background: #001a33; font-family: Arial, sans-serif; }
-#canvas { display: block; width: 100vw; height: 100vh; position: fixed; top: 0; left: 0; }
+#debug { position: fixed; top: 5px; left: 5px; background: rgba(0,0,0,0.9); color: #0f0; font-family: monospace; font-size: 11px; padding: 8px; z-index: 10000; }
 #ui { position: fixed; top: 20px; left: 0; width: 100%; text-align: center; pointer-events: none; z-index: 10; }
-#title { color: rgba(200, 230, 255, 0.85); font-size: 16px; font-weight: 300; letter-spacing: 3px; text-transform: uppercase; text-shadow: 0 2px 10px rgba(0, 50, 100, 0.6); }
-#species-label { color: rgba(150, 200, 255, 0.5); font-size: 11px; letter-spacing: 1.5px; margin-top: 5px; }
-#controls { position: fixed; bottom: 15px; left: 0; width: 100%; display: flex; justify-content: center; gap: 10px; pointer-events: none; z-index: 10; }
-.control-btn { background: rgba(255, 255, 255, 0.06); border: 1px solid rgba(100, 150, 200, 0.25); color: rgba(180, 210, 240, 0.7); padding: 6px 14px; border-radius: 15px; cursor: pointer; font-size: 11px; letter-spacing: 1px; text-transform: uppercase; pointer-events: auto; }
-.control-btn:hover { background: rgba(255, 255, 255, 0.12); color: rgba(220, 240, 255, 0.9); }
-#stats { position: fixed; top: 20px; right: 15px; color: rgba(150, 180, 220, 0.4); font-size: 10px; letter-spacing: 1px; text-align: right; z-index: 10; }
-#debug { position: fixed; bottom: 50px; left: 10px; color: lime; font-size: 10px; font-family: monospace; z-index: 10; pointer-events: none; }
+#title { color: rgba(200, 230, 255, 0.85); font-size: 16px; font-weight: 300; letter-spacing: 3px; text-transform: uppercase; }
+#species-label { color: rgba(150, 200, 255, 0.5); font-size: 11px; margin-top: 5px; }
+#controls { position: fixed; bottom: 15px; left: 0; width: 100%; display: flex; justify-content: center; gap: 10px; z-index: 10; }
+.control-btn { background: rgba(255,255,255,0.06); border: 1px solid rgba(100,150,200,0.25); color: rgba(180,210,240,0.7); padding: 6px 14px; border-radius: 15px; cursor: pointer; font-size: 11px; letter-spacing: 1px; }
+#stats { position: fixed; top: 20px; right: 15px; color: rgba(150,180,220,0.4); font-size: 10px; z-index: 10; }
+#info-panel { position: fixed; bottom: 60px; left: 50%; transform: translateX(-50%); background: rgba(0,20,40,0.9); border: 1px solid rgba(80,140,200,0.4); border-radius: 8px; padding: 12px 20px; color: rgba(200,230,255,0.95); font-family: Arial, sans-serif; font-size: 12px; opacity: 0; transition: opacity 0.3s; max-width: 350px; text-align: center; }
+#info-panel.visible { opacity: 1; }
+#info-panel .fish-name { font-size: 14px; font-weight: 500; color: rgba(220,240,255,1); }
+#info-panel .fish-detail { color: rgba(150,200,255,0.7); font-size: 11px; }
 </style>
 </head>
 <body>
 <div id="debug">Initializing...</div>
-<canvas id="canvas"></canvas>
+<canvas id="canvas" style="position:fixed;top:0;left:0;width:100%;height:100%"></canvas>
 <div id="ui">
     <div id="title">Marine Aquarium</div>
     <div id="species-label">Hover over fish to identify species</div>
@@ -29,6 +31,7 @@ body { overflow: hidden; background: #001a33; font-family: Arial, sans-serif; }
     <div id="fish-count">Fish: 40</div>
     <div id="fps-counter">60 FPS</div>
 </div>
+<div id="info-panel"><div class="fish-name"></div><div class="fish-detail"></div></div>
 <div id="controls">
     <button class="control-btn" onclick="timeScale = 0.5">Slow</button>
     <button class="control-btn" onclick="timeScale = 1.0">Normal</button>
@@ -38,63 +41,110 @@ body { overflow: hidden; background: #001a33; font-family: Arial, sans-serif; }
 
 <script>
 var debug = document.getElementById('debug');
-var log = function(msg) { debug.textContent = msg; console.log(msg); };
+function log(m) { debug.textContent = m; console.log(m); }
+log('Starting...');
 
-var canvas, ctx, width, height;
-var time = 0, timeScale = 1.0, paused = false;
-var fps = 0, lastTime = 0;
-var fishes = [];
+var canvas, ctx, W, H;
+var time = 0, timeScale = 1.0, paused = false, lastTime = 0, fps = 0, fpsTime = 0;
 
-log('Step 1: Looking for canvas...');
+log('Getting canvas...');
 canvas = document.getElementById('canvas');
-if (!canvas) { log('ERROR: Canvas not found'); throw new Error('Canvas not found'); }
-log('Step 2: Got canvas, getting context...');
-
 ctx = canvas.getContext('2d');
-if (!ctx) { log('ERROR: Canvas 2D context not available'); throw new Error('No 2D context'); }
-log('Step 3: Context obtained, setting size...');
 
-width = canvas.width = window.innerWidth;
-height = canvas.height = window.innerHeight;
-log('Step 4: Canvas sized to ' + width + 'x' + height);
+W = canvas.width = window.innerWidth;
+H = canvas.height = window.innerHeight;
+log('Canvas: ' + W + 'x' + H);
 
-// Simple test fish
-for (var i = 0; i < 5; i++) {
+// Fish data - bright red circles that must be visible
+var fishes = [];
+for (var i = 0; i < 40; i++) {
     fishes.push({
-        x: Math.random() * width,
-        y: Math.random() * height,
-        color: ['#ff6414', '#1446dc', '#dcc832', '#00c8ff', '#ff328c'][i]
+        x: 100 + Math.random() * (W - 200),
+        y: 100 + Math.random() * (H - 300),
+        vx: (Math.random() - 0.5) * 3,
+        vy: (Math.random() - 0.5) * 2,
+        size: 15 + Math.random() * 20,
+        color: ['#ff0000', '#00ff00', '#ffff00', '#ff00ff', '#00ffff', '#ff8800', '#ff0088', '#88ff00'][i % 8],
+        species: { name: ['Clownfish','Blue Tang','Angelfish','Neon Guppy','Mollies','Parrotfish','Damsel','Mandarin'][i % 8] }
     });
 }
-
-log('Step 5: Starting animation...');
+log('Created ' + fishes.length + ' fish');
 
 function draw() {
+    // Clear with background
     ctx.fillStyle = '#001a33';
-    ctx.fillRect(0, 0, width, height);
+    ctx.fillRect(0, 0, W, H);
     
+    // Draw gradient
+    var grad = ctx.createLinearGradient(0, 0, 0, H);
+    grad.addColorStop(0, '#001a33');
+    grad.addColorStop(1, '#002244');
+    ctx.fillStyle = grad;
+    ctx.fillRect(0, 0, W, H);
+    
+    // Draw sand at bottom
+    ctx.fillStyle = '#c4a45a';
+    ctx.fillRect(0, H - 60, W, 60);
+    
+    // Draw fish as large bright circles
     for (var i = 0; i < fishes.length; i++) {
-        fishes[i].x += (Math.random() - 0.5) * 2;
-        fishes[i].y += (Math.random() - 0.5) * 2;
+        var f = fishes[i];
         
-        ctx.fillStyle = fishes[i].color;
+        // Update position
+        f.x += f.vx * timeScale;
+        f.y += f.vy * timeScale;
+        
+        // Bounce off edges
+        if (f.x < 50 || f.x > W - 50) f.vx *= -1;
+        if (f.y < 80 || f.y > H - 100) f.vy *= -1;
+        
+        f.x = Math.max(50, Math.min(W - 50, f.x));
+        f.y = Math.max(80, Math.min(H - 100, f.y));
+        
+        // Draw fish body (large bright circle)
+        ctx.fillStyle = f.color;
         ctx.beginPath();
-        ctx.ellipse(fishes[i].x, fishes[i].y, 15, 10, 0, 0, Math.PI * 2);
+        ctx.arc(f.x, f.y, f.size, 0, Math.PI * 2);
+        ctx.fill();
+        
+        // Draw outline
+        ctx.strokeStyle = '#ffffff';
+        ctx.lineWidth = 2;
+        ctx.stroke();
+        
+        // Draw eye
+        ctx.fillStyle = '#ffffff';
+        ctx.beginPath();
+        ctx.arc(f.x + f.size * 0.3, f.y - f.size * 0.2, f.size * 0.25, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.fillStyle = '#000000';
+        ctx.beginPath();
+        ctx.arc(f.x + f.size * 0.35, f.y - f.size * 0.2, f.size * 0.12, 0, Math.PI * 2);
         ctx.fill();
     }
     
+    // FPS
     fps++;
+    var now = performance.now();
+    if (now - fpsTime > 1000) {
+        document.getElementById('fps-counter').textContent = fps + ' FPS';
+        fps = 0;
+        fpsTime = now;
+    }
+    
     requestAnimationFrame(draw);
 }
 
+// Start
+log('Starting animation...');
+paused = false;
 draw();
-log('Step 6: Animation started - should see colored ellipses moving');
+log('Animation loop started');
 
-window.addEventListener('resize', function() {
-    width = canvas.width = window.innerWidth;
-    height = canvas.height = window.innerHeight;
-    log('Resized to ' + width + 'x' + height);
-});
+// Debug: verify fish are visible
+setTimeout(function() {
+    log('After 1s: ' + fishes.length + ' fish, last pos: ' + fishes[0].x.toFixed(0) + ',' + fishes[0].y.toFixed(0));
+}, 1000);
 </script>
 </body>
 </html>
