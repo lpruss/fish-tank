@@ -14,14 +14,14 @@ canvas { display: block; width: 100vw; height: 100vh; }
 .control-btn { background: rgba(255, 255, 255, 0.06); border: 1px solid rgba(100, 150, 200, 0.25); color: rgba(180, 210, 240, 0.7); padding: 6px 14px; border-radius: 15px; cursor: pointer; font-size: 11px; letter-spacing: 1px; text-transform: uppercase; pointer-events: auto; }
 .control-btn:hover { background: rgba(255, 255, 255, 0.12); color: rgba(220, 240, 255, 0.9); }
 #stats { position: fixed; top: 20px; right: 15px; color: rgba(150, 180, 220, 0.4); font-size: 10px; letter-spacing: 1px; text-align: right; z-index: 10; }
-#info-panel { position: fixed; bottom: 60px; left: 50%; transform: translateX(-50%); background: rgba(0, 20, 40, 0.9); border: 1px solid rgba(80, 140, 200, 0.4); border-radius: 8px; padding: 12px 20px; color: rgba(200, 230, 255, 0.95); font-family: Arial, sans-serif; font-size: 12px; opacity: 0; transition: opacity 0.3s; max-width: 350px; text-align: center; }
+#info-panel { position: fixed; bottom: 60px; left: 50%; transform: translateX(-50%); background: rgba(0, 20, 40, 0.9); border: 1px solid rgba(80, 140, 200, 0.4); border-radius: 8px; padding: 12px 20px; color: rgba(200, 230, 255, 0.95); font-family: Arial, sans-serif; font-size: 12px; opacity: 0; transition: opacity 0.3s; max-width: 350px; text-align: center; pointer-events: none; }
 #info-panel.visible { opacity: 1; }
 #info-panel .fish-name { font-size: 14px; font-weight: 500; color: rgba(220, 240, 255, 1); }
 #info-panel .fish-detail { color: rgba(150, 200, 255, 0.7); font-size: 11px; }
 </style>
 </head>
 <body>
-<canvas id="canvas"></canvas>
+<canvas id="fishCanvas"></canvas>
 <div id="ui">
     <div id="title">Marine Aquarium</div>
     <div id="species-label">Hover over fish to identify species</div>
@@ -33,35 +33,50 @@ canvas { display: block; width: 100vw; height: 100vh; }
 </div>
 <div id="info-panel"><div class="fish-name"></div><div class="fish-detail"></div></div>
 <div id="controls">
-    <button class="control-btn" onclick="timeScale = 0.5">Slow</button>
-    <button class="control-btn" onclick="timeScale = 1.0">Normal</button>
-    <button class="control-btn" onclick="timeScale = 2.0">Fast</button>
-    <button class="control-btn" onclick="paused = !paused">Pause</button>
+    <button class="control-btn" onclick="window.timeScale = 0.5">Slow</button>
+    <button class="control-btn" onclick="window.timeScale = 1.0">Normal</button>
+    <button class="control-btn" onclick="window.timeScale = 2.0">Fast</button>
+    <button class="control-btn" onclick="window.paused = !window.paused">Pause</button>
 </div>
 
 <script>
-var canvas = document.getElementById('canvas');
-var ctx = canvas.getContext('2d');
-
-function resize() {
-    canvas.width = window.innerWidth;
-    canvas.height = window.innerHeight;
-}
-resize();
-window.addEventListener('resize', resize);
-
-var W = canvas.width, H = canvas.height;
-var time = 0, timeScale = 1.0, paused = false, lastTime = 0, fps = 0, fpsTime = 0;
-
-// Fish class with biological realism
-class Fish {
-    constructor(species) {
+// All code runs after DOM is ready since script is at end of body
+(function() {
+    var canvas = document.getElementById('fishCanvas');
+    var ctx = canvas.getContext('2d');
+    
+    var W = window.innerWidth, H = window.innerHeight;
+    canvas.width = W;
+    canvas.height = H;
+    
+    window.paused = false;
+    window.timeScale = 1.0;
+    var time = 0;
+    var lastTime = 0;
+    var fps = 0;
+    var fpsTime = 0;
+    
+    var mouseX = -1000, mouseY = -1000;
+    var hoveredFish = null;
+    
+    var speciesList = [
+        { name: 'Clownfish', latin: 'Amphiprion ocellaris', color: '#ff6414', stripe: '#ffffff', size: 0.75, speed: 0.8 },
+        { name: 'Blue Tang', latin: 'Paracanthurus hepatus', color: '#1446dc', stripe: '#0a1eb4', size: 1.0, speed: 1.2 },
+        { name: 'Angelfish', latin: 'Pomacanthus imperator', color: '#dcc832', stripe: '#ffb41e', size: 1.2, speed: 0.6 },
+        { name: 'Neon Guppy', latin: 'Poecilia reticulata', color: '#00c8ff', stripe: '#ff3250', size: 0.4, speed: 1.5 },
+        { name: 'Mollies', latin: 'Poecilia sphenops', color: '#ff328c', stripe: '#ffc864', size: 0.5, speed: 1.3 },
+        { name: 'Parrotfish', latin: 'Scarus vetula', color: '#ff3c50', stripe: '#ff961e', size: 1.1, speed: 0.7 },
+        { name: 'Damsel', latin: 'Pomacentridae', color: '#1e1e50', stripe: '#6478c8', size: 0.5, speed: 1.0 },
+        { name: 'Mandarin', latin: 'Synchiropus splendidus', color: '#00b464', stripe: '#ff6432', size: 0.6, speed: 0.5 }
+    ];
+    
+    function Fish(species) {
         this.species = species;
         this.x = 100 + Math.random() * (W - 200);
         this.y = 100 + Math.random() * (H - 300);
         this.vx = (Math.random() - 0.5) * 2 * species.speed;
         this.vy = (Math.random() - 0.5) * 1.5 * species.speed;
-        this.size = species.size * (0.8 + Math.random() * 0.4);
+        this.size = species.size * (25 + Math.random() * 15);
         this.angle = Math.atan2(this.vy, this.vx);
         this.tailPhase = Math.random() * Math.PI * 2;
         this.bobPhase = Math.random() * Math.PI * 2;
@@ -71,16 +86,13 @@ class Fish {
         this.targetVy = this.vy;
     }
     
-    update(dt) {
+    Fish.prototype.update = function(dt) {
         var spd = this.size * 0.05 * this.species.speed;
-        this.x += this.vx * spd * timeScale * dt;
-        this.y += this.vy * spd * timeScale * dt;
-        
-        // Gentle bobbing
+        this.x += this.vx * spd * window.timeScale * dt;
+        this.y += this.vy * spd * window.timeScale * dt;
         this.y += Math.sin(time * this.bobSpeed) * 0.3 * this.bobSpeed;
         
-        // Natural turning
-        this.turnTimer -= dt * 1000 * timeScale;
+        this.turnTimer -= dt * 1000 * window.timeScale;
         if (this.turnTimer <= 0) {
             var turnAngle = (Math.random() - 0.5) * Math.PI * 0.8;
             var currentSpeed = Math.sqrt(this.vx * this.vx + this.vy * this.vy);
@@ -90,12 +102,10 @@ class Fish {
             this.turnTimer = 3000 + Math.random() * 7000;
         }
         
-        // Smooth turning
         this.vx += (this.targetVx - this.vx) * 0.02;
         this.vy += (this.targetVy - this.vy) * 0.02;
         this.angle = Math.atan2(this.vy, this.vx);
         
-        // Wall avoidance
         var margin = 80;
         if (this.x < margin) this.targetVx = Math.abs(this.targetVx);
         if (this.x > W - margin) this.targetVx = -Math.abs(this.targetVx);
@@ -104,11 +114,10 @@ class Fish {
         
         this.x = Math.max(50, Math.min(W - 50, this.x));
         this.y = Math.max(80, Math.min(H - 120, this.y));
-        
-        this.tailPhase += dt * 8 * timeScale;
-    }
+        this.tailPhase += dt * 8 * window.timeScale;
+    };
     
-    draw(ctx) {
+    Fish.prototype.draw = function(ctx) {
         ctx.save();
         ctx.translate(this.x, this.y);
         ctx.rotate(this.angle);
@@ -172,225 +181,186 @@ class Fish {
         ctx.quadraticCurveTo(s * 0.1, s * 0.5, -s * 0.1, s * 0.35);
         ctx.fill();
         
-        // Eye (white part)
+        // Eye
         ctx.fillStyle = '#ffffff';
         ctx.beginPath();
         ctx.arc(s * 0.5, -s * 0.1, s * 0.15, 0, Math.PI * 2);
         ctx.fill();
-        
-        // Pupil
         ctx.fillStyle = '#000000';
         ctx.beginPath();
         ctx.arc(s * 0.55, -s * 0.1, s * 0.08, 0, Math.PI * 2);
         ctx.fill();
-        
-        // Eye highlight
         ctx.fillStyle = '#ffffff';
         ctx.beginPath();
         ctx.arc(s * 0.57, -s * 0.13, s * 0.03, 0, Math.PI * 2);
         ctx.fill();
         
         ctx.restore();
-    }
+    };
     
-    containsPoint(mx, my) {
+    Fish.prototype.containsPoint = function(mx, my) {
         var dx = mx - this.x;
         var dy = my - this.y;
         var dist = Math.sqrt(dx * dx + dy * dy);
-        return dist < this.size * 1.2;
-    }
-}
-
-// Species definitions
-var speciesList = [
-    { name: 'Clownfish', latin: 'Amphiprion ocellaris', color: '#ff6414', stripe: '#ffffff', size: 0.75, speed: 0.8 },
-    { name: 'Blue Tang', latin: 'Paracanthurus hepatus', color: '#1446dc', stripe: '#0a1eb4', size: 1.0, speed: 1.2 },
-    { name: 'Angelfish', latin: 'Pomacanthus imperator', color: '#dcc832', stripe: '#ffb41e', size: 1.2, speed: 0.6 },
-    { name: 'Neon Guppy', latin: 'Poecilia reticulata', color: '#00c8ff', stripe: '#ff3250', size: 0.4, speed: 1.5 },
-    { name: 'Mollies', latin: 'Poecilia sphenops', color: '#ff328c', stripe: '#ffc864', size: 0.5, speed: 1.3 },
-    { name: 'Parrotfish', latin: 'Scarus vetula', color: '#ff3c50', stripe: '#ff961e', size: 1.1, speed: 0.7 },
-    { name: 'Damsel', latin: 'Pomacentridae', color: '#1e1e50', stripe: '#6478c8', size: 0.5, speed: 1.0 },
-    { name: 'Mandarin', latin: 'Synchiropus splendidus', color: '#00b464', stripe: '#ff6432', size: 0.6, speed: 0.5 }
-];
-
-var fishes = [];
-for (var i = 0; i < 40; i++) {
-    var sp = speciesList[Math.floor(Math.random() * speciesList.length)];
-    fishes.push(new Fish(sp));
-}
-
-// Background elements
-var seaweed = [];
-for (var i = 0; i < 20; i++) {
-    seaweed.push({
-        x: Math.random() * window.innerWidth,
-        height: 50 + Math.random() * 100,
-        phase: Math.random() * Math.PI * 2
-    });
-}
-
-var bubbles = [];
-for (var i = 0; i < 40; i++) {
-    bubbles.push({
-        x: Math.random() * window.innerWidth,
-        y: window.innerHeight + 50 + Math.random() * 200,
-        size: 2 + Math.random() * 4,
-        speed: 0.5 + Math.random() * 1,
-        phase: Math.random() * Math.PI * 2
-    });
-}
-
-// Mouse tracking
-var mouseX = -1000, mouseY = -1000;
-var hoveredFish = null;
-var infoPanel = document.getElementById('info-panel');
-
-canvas.addEventListener('mousemove', function(e) {
-    var rect = canvas.getBoundingClientRect();
-    mouseX = e.clientX - rect.left;
-    mouseY = e.clientY - rect.top;
+        return dist < this.size * 1.5;
+    };
     
-    hoveredFish = null;
-    for (var i = 0; i < fishes.length; i++) {
-        if (fishes[i].containsPoint(mouseX, mouseY)) {
-            hoveredFish = fishes[i];
-            break;
+    var fishes = [];
+    for (var i = 0; i < 40; i++) {
+        var sp = speciesList[Math.floor(Math.random() * speciesList.length)];
+        fishes.push(new Fish(sp));
+    }
+    
+    var seaweed = [];
+    for (var i = 0; i < 20; i++) {
+        seaweed.push({ x: Math.random() * W, height: 50 + Math.random() * 100, phase: Math.random() * Math.PI * 2 });
+    }
+    
+    var bubbles = [];
+    for (var i = 0; i < 40; i++) {
+        bubbles.push({ x: Math.random() * W, y: H + 50 + Math.random() * 200, size: 2 + Math.random() * 4, speed: 0.5 + Math.random() * 1, phase: Math.random() * Math.PI * 2 });
+    }
+    
+    var infoPanel = document.getElementById('info-panel');
+    
+    canvas.addEventListener('mousemove', function(e) {
+        var rect = canvas.getBoundingClientRect();
+        mouseX = e.clientX - rect.left;
+        mouseY = e.clientY - rect.top;
+        
+        hoveredFish = null;
+        for (var i = 0; i < fishes.length; i++) {
+            if (fishes[i].containsPoint(mouseX, mouseY)) {
+                hoveredFish = fishes[i];
+                break;
+            }
         }
-    }
+        
+        if (hoveredFish) {
+            infoPanel.querySelector('.fish-name').textContent = hoveredFish.species.name;
+            infoPanel.querySelector('.fish-detail').textContent = hoveredFish.species.latin + ' • Speed: ' + (hoveredFish.species.speed * 10).toFixed(0) + ' cm/s';
+            infoPanel.classList.add('visible');
+        } else {
+            infoPanel.classList.remove('visible');
+        }
+    });
     
-    if (hoveredFish) {
-        var nameEl = infoPanel.querySelector('.fish-name');
-        var detailEl = infoPanel.querySelector('.fish-detail');
-        nameEl.textContent = hoveredFish.species.name;
-        detailEl.textContent = hoveredFish.species.latin + ' • Speed: ' + (hoveredFish.species.speed * 10).toFixed(0) + ' cm/s';
-        infoPanel.classList.add('visible');
-    } else {
+    canvas.addEventListener('mouseleave', function() {
+        mouseX = -1000;
+        mouseY = -1000;
         infoPanel.classList.remove('visible');
-    }
-});
-
-canvas.addEventListener('mouseleave', function() {
-    mouseX = -1000;
-    mouseY = -1000;
-    infoPanel.classList.remove('visible');
-});
-
-function drawBackground() {
-    // Water gradient
-    var grad = ctx.createLinearGradient(0, 0, 0, H);
-    grad.addColorStop(0, '#001a33');
-    grad.addColorStop(0.5, '#002244');
-    grad.addColorStop(1, '#002a55');
-    ctx.fillStyle = grad;
-    ctx.fillRect(0, 0, W, H);
+    });
     
-    // Light rays
-    ctx.save();
-    ctx.globalAlpha = 0.03;
-    for (var i = 0; i < 5; i++) {
-        var x = W * 0.2 + i * W * 0.15;
-        ctx.beginPath();
-        ctx.moveTo(x, 0);
-        ctx.lineTo(x - 50, H);
-        ctx.lineTo(x + 50, H);
-        ctx.closePath();
-        ctx.fillStyle = '#00aaff';
-        ctx.fill();
-    }
-    ctx.restore();
+    window.addEventListener('resize', function() {
+        W = window.innerWidth;
+        H = window.innerHeight;
+        canvas.width = W;
+        canvas.height = H;
+    });
     
-    // Sand
-    var sandGrad = ctx.createLinearGradient(0, H - 60, 0, H);
-    sandGrad.addColorStop(0, '#c4a45a');
-    sandGrad.addColorStop(1, '#a08040');
-    ctx.fillStyle = sandGrad;
-    ctx.fillRect(0, H - 60, W, 60);
-    
-    // Sand texture
-    ctx.fillStyle = 'rgba(180, 150, 80, 0.5)';
-    for (var i = 0; i < 50; i++) {
-        var sx = (i * 73 + time * 10) % W;
-        var sy = H - 60 + Math.sin(i * 2.3) * 15 + 5;
-        ctx.fillRect(sx, sy, 3, 2);
-    }
-    
-    // Seaweed
-    for (var i = 0; i < seaweed.length; i++) {
-        var sw = seaweed[i];
-        ctx.strokeStyle = '#2d5a27';
-        ctx.lineWidth = 4;
-        ctx.beginPath();
-        ctx.moveTo(sw.x, H - 60);
-        for (var j = 0; j < 5; j++) {
-            var yy = H - 60 - (j + 1) * sw.height / 5;
-            var xx = sw.x + Math.sin(time * 2 + sw.phase + j * 0.5) * 10;
-            ctx.lineTo(xx, yy);
-        }
-        ctx.stroke();
-    }
-}
-
-function drawBubbles() {
-    for (var i = 0; i < bubbles.length; i++) {
-        var b = bubbles[i];
-        b.y -= b.speed * timeScale;
-        b.x += Math.sin(time * 3 + b.phase) * 0.5;
+    function drawBackground() {
+        var grad = ctx.createLinearGradient(0, 0, 0, H);
+        grad.addColorStop(0, '#001a33');
+        grad.addColorStop(0.5, '#002244');
+        grad.addColorStop(1, '#002a55');
+        ctx.fillStyle = grad;
+        ctx.fillRect(0, 0, W, H);
         
-        if (b.y < -20) {
-            b.y = H + 50;
-            b.x = Math.random() * W;
+        ctx.save();
+        ctx.globalAlpha = 0.03;
+        for (var i = 0; i < 5; i++) {
+            var x = W * 0.2 + i * W * 0.15;
+            ctx.beginPath();
+            ctx.moveTo(x, 0);
+            ctx.lineTo(x - 50, H);
+            ctx.lineTo(x + 50, H);
+            ctx.closePath();
+            ctx.fillStyle = '#00aaff';
+            ctx.fill();
+        }
+        ctx.restore();
+        
+        var sandGrad = ctx.createLinearGradient(0, H - 60, 0, H);
+        sandGrad.addColorStop(0, '#c4a45a');
+        sandGrad.addColorStop(1, '#a08040');
+        ctx.fillStyle = sandGrad;
+        ctx.fillRect(0, H - 60, W, 60);
+        
+        ctx.fillStyle = 'rgba(180, 150, 80, 0.5)';
+        for (var i = 0; i < 50; i++) {
+            var sx = (i * 73 + time * 10) % W;
+            var sy = H - 60 + Math.sin(i * 2.3) * 15 + 5;
+            ctx.fillRect(sx, sy, 3, 2);
         }
         
-        ctx.strokeStyle = 'rgba(200, 230, 255, 0.3)';
-        ctx.lineWidth = 1;
-        ctx.beginPath();
-        ctx.arc(b.x, b.y, b.size, 0, Math.PI * 2);
-        ctx.stroke();
+        for (var i = 0; i < seaweed.length; i++) {
+            var sw = seaweed[i];
+            ctx.strokeStyle = '#2d5a27';
+            ctx.lineWidth = 4;
+            ctx.beginPath();
+            ctx.moveTo(sw.x, H - 60);
+            for (var j = 0; j < 5; j++) {
+                var yy = H - 60 - (j + 1) * sw.height / 5;
+                var xx = sw.x + Math.sin(time * 2 + sw.phase + j * 0.5) * 10;
+                ctx.lineTo(xx, yy);
+            }
+            ctx.stroke();
+        }
+    }
+    
+    function drawBubbles() {
+        for (var i = 0; i < bubbles.length; i++) {
+            var b = bubbles[i];
+            b.y -= b.speed * window.timeScale;
+            b.x += Math.sin(time * 3 + b.phase) * 0.5;
+            if (b.y < -20) { b.y = H + 50; b.x = Math.random() * W; }
+            
+            ctx.strokeStyle = 'rgba(200, 230, 255, 0.3)';
+            ctx.lineWidth = 1;
+            ctx.beginPath();
+            ctx.arc(b.x, b.y, b.size, 0, Math.PI * 2);
+            ctx.stroke();
+            
+            ctx.fillStyle = 'rgba(255, 255, 255, 0.2)';
+            ctx.beginPath();
+            ctx.arc(b.x - b.size * 0.3, b.y - b.size * 0.3, b.size * 0.25, 0, Math.PI * 2);
+            ctx.fill();
+        }
+    }
+    
+    function animate(timestamp) {
+        var dt = lastTime ? (timestamp - lastTime) / 1000 : 0.016;
+        lastTime = timestamp;
+        dt = Math.min(dt, 0.1);
         
-        // Highlight
-        ctx.fillStyle = 'rgba(255, 255, 255, 0.2)';
-        ctx.beginPath();
-        ctx.arc(b.x - b.size * 0.3, b.y - b.size * 0.3, b.size * 0.25, 0, Math.PI * 2);
-        ctx.fill();
-    }
-}
-
-function animate(timestamp) {
-    var dt = lastTime ? (timestamp - lastTime) / 1000 : 0.016;
-    lastTime = timestamp;
-    dt = Math.min(dt, 0.1);
-    
-    // FPS counter
-    fps++;
-    if (timestamp - fpsTime > 1000) {
-        document.getElementById('fps-counter').textContent = fps + ' FPS';
-        fps = 0;
-        fpsTime = timestamp;
-    }
-    
-    // Update
-    if (!paused) {
-        time += dt * timeScale;
+        fps++;
+        if (timestamp - fpsTime > 1000) {
+            document.getElementById('fps-counter').textContent = fps + ' FPS';
+            fps = 0;
+            fpsTime = timestamp;
+        }
+        
+        if (!window.paused) {
+            time += dt * window.timeScale;
+            for (var i = 0; i < fishes.length; i++) {
+                fishes[i].update(dt);
+            }
+        }
+        
+        ctx.clearRect(0, 0, W, H);
+        drawBackground();
+        drawBubbles();
         
         for (var i = 0; i < fishes.length; i++) {
-            fishes[i].update(dt);
+            fishes[i].draw(ctx);
         }
+        
+        requestAnimationFrame(animate);
     }
     
-    // Draw
-    ctx.clearRect(0, 0, W, H);
-    drawBackground();
-    drawBubbles();
-    
-    // Draw fish (sorted by size for depth)
-    for (var i = 0; i < fishes.length; i++) {
-        fishes[i].draw(ctx);
-    }
-    
+    // Start the animation
     requestAnimationFrame(animate);
-}
-
-requestAnimationFrame(animate);
+})();
 </script>
 </body>
 </html>
