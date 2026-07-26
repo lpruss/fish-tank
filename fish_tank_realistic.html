@@ -6,21 +6,19 @@
 <style>
 * { margin: 0; padding: 0; box-sizing: border-box; }
 body { overflow: hidden; background: #001a33; font-family: Arial, sans-serif; }
-canvas { display: block; width: 100vw; height: 100vh; }
-#ui { position: absolute; top: 20px; left: 0; width: 100%; text-align: center; pointer-events: none; z-index: 10; }
+#canvas { display: block; width: 100vw; height: 100vh; position: fixed; top: 0; left: 0; }
+#ui { position: fixed; top: 20px; left: 0; width: 100%; text-align: center; pointer-events: none; z-index: 10; }
 #title { color: rgba(200, 230, 255, 0.85); font-size: 16px; font-weight: 300; letter-spacing: 3px; text-transform: uppercase; text-shadow: 0 2px 10px rgba(0, 50, 100, 0.6); }
 #species-label { color: rgba(150, 200, 255, 0.5); font-size: 11px; letter-spacing: 1.5px; margin-top: 5px; }
-#controls { position: absolute; bottom: 15px; left: 0; width: 100%; display: flex; justify-content: center; gap: 10px; pointer-events: none; z-index: 10; }
+#controls { position: fixed; bottom: 15px; left: 0; width: 100%; display: flex; justify-content: center; gap: 10px; pointer-events: none; z-index: 10; }
 .control-btn { background: rgba(255, 255, 255, 0.06); border: 1px solid rgba(100, 150, 200, 0.25); color: rgba(180, 210, 240, 0.7); padding: 6px 14px; border-radius: 15px; cursor: pointer; font-size: 11px; letter-spacing: 1px; text-transform: uppercase; pointer-events: auto; }
 .control-btn:hover { background: rgba(255, 255, 255, 0.12); color: rgba(220, 240, 255, 0.9); }
-#stats { position: absolute; top: 20px; right: 15px; color: rgba(150, 180, 220, 0.4); font-size: 10px; letter-spacing: 1px; text-align: right; z-index: 10; }
-#info-panel { position: absolute; bottom: 60px; left: 50%; transform: translateX(-50%); background: rgba(0, 20, 40, 0.85); border: 1px solid rgba(80, 140, 200, 0.4); border-radius: 8px; padding: 12px 20px; color: rgba(200, 230, 255, 0.95); font-family: Arial, sans-serif; font-size: 12px; letter-spacing: 0.5px; pointer-events: none; z-index: 10; opacity: 0; transition: opacity 0.3s; max-width: 350px; text-align: center; backdrop-filter: blur(10px); }
-#info-panel.visible { opacity: 1; }
-#info-panel .fish-name { font-size: 14px; font-weight: 500; margin-bottom: 4px; color: rgba(220, 240, 255, 1); }
-#info-panel .fish-detail { color: rgba(150, 200, 255, 0.7); font-size: 11px; }
+#stats { position: fixed; top: 20px; right: 15px; color: rgba(150, 180, 220, 0.4); font-size: 10px; letter-spacing: 1px; text-align: right; z-index: 10; }
+#debug { position: fixed; bottom: 50px; left: 10px; color: lime; font-size: 10px; font-family: monospace; z-index: 10; pointer-events: none; }
 </style>
 </head>
 <body>
+<div id="debug">Initializing...</div>
 <canvas id="canvas"></canvas>
 <div id="ui">
     <div id="title">Marine Aquarium</div>
@@ -31,7 +29,6 @@ canvas { display: block; width: 100vw; height: 100vh; }
     <div id="fish-count">Fish: 40</div>
     <div id="fps-counter">60 FPS</div>
 </div>
-<div id="info-panel"><div class="fish-name"></div><div class="fish-detail"></div></div>
 <div id="controls">
     <button class="control-btn" onclick="timeScale = 0.5">Slow</button>
     <button class="control-btn" onclick="timeScale = 1.0">Normal</button>
@@ -40,257 +37,64 @@ canvas { display: block; width: 100vw; height: 100vh; }
 </div>
 
 <script>
-var canvas, ctx;
-var width, height, time, timeScale, paused, fps, lastTime;
+var debug = document.getElementById('debug');
+var log = function(msg) { debug.textContent = msg; console.log(msg); };
+
+var canvas, ctx, width, height;
+var time = 0, timeScale = 1.0, paused = false;
+var fps = 0, lastTime = 0;
 var fishes = [];
-var bubbles = [];
 
-function init() {
-    canvas = document.getElementById('canvas');
-    if (!canvas) { console.error('Canvas element not found!'); return; }
-    ctx = canvas.getContext('2d');
-    if (!ctx) { console.error('Canvas 2D context not available!'); return; }
-    
-    width = canvas.width = window.innerWidth;
-    height = canvas.height = window.innerHeight;
-    time = 0; timeScale = 1.0; paused = false; fps = 0; lastTime = 0;
-    
-    createFish();
-    createBubbles();
-    window.addEventListener('resize', function() {
-        width = canvas.width = window.innerWidth;
-        height = canvas.height = window.innerHeight;
+log('Step 1: Looking for canvas...');
+canvas = document.getElementById('canvas');
+if (!canvas) { log('ERROR: Canvas not found'); throw new Error('Canvas not found'); }
+log('Step 2: Got canvas, getting context...');
+
+ctx = canvas.getContext('2d');
+if (!ctx) { log('ERROR: Canvas 2D context not available'); throw new Error('No 2D context'); }
+log('Step 3: Context obtained, setting size...');
+
+width = canvas.width = window.innerWidth;
+height = canvas.height = window.innerHeight;
+log('Step 4: Canvas sized to ' + width + 'x' + height);
+
+// Simple test fish
+for (var i = 0; i < 5; i++) {
+    fishes.push({
+        x: Math.random() * width,
+        y: Math.random() * height,
+        color: ['#ff6414', '#1446dc', '#dcc832', '#00c8ff', '#ff328c'][i]
     });
-    
-    canvas.addEventListener('mousemove', onMouseMove);
-    requestAnimationFrame(animate);
 }
 
-function createFish() {
-    var speciesList = [
-        { name: 'Clownfish', latin: 'Amphiprion ocellaris', color: '#ff6414', stripe: '#ffffff', size: 0.75, speed: 0.8 },
-        { name: 'Blue Tang', latin: 'Paracanthurus hepatus', color: '#1446dc', stripe: '#0a1eb4', size: 1.0, speed: 1.2 },
-        { name: 'Angelfish', latin: 'Pomacanthus imperator', color: '#dcc832', stripe: '#ffb41e', size: 1.2, speed: 0.6 },
-        { name: 'Neon Guppy', latin: 'Poecilia reticulata', color: '#00c8ff', stripe: '#ff3250', size: 0.4, speed: 1.5 },
-        { name: 'Mollies', latin: 'Poecilia sphenops', color: '#ff328c', stripe: '#ffc864', size: 0.5, speed: 1.3 },
-        { name: 'Parrotfish', latin: 'Scarus vetula', color: '#ff3c50', stripe: '#ff961e', size: 1.1, speed: 0.7 },
-        { name: 'Damsel', latin: 'Pomacentridae', color: '#1e1e50', stripe: '#6478c8', size: 0.5, speed: 1.0 },
-        { name: 'Mandarin', latin: 'Synchiropus splendidus', color: '#00b464', stripe: '#ff6432', size: 0.6, speed: 0.5 }
-    ];
-    
-    for (var i = 0; i < 40; i++) {
-        var sp = speciesList[Math.floor(Math.random() * speciesList.length)];
-        fishes.push({
-            x: Math.random() * width,
-            y: Math.random() * height * 0.6 + height * 0.15,
-            species: sp,
-            angle: Math.random() * Math.PI * 2,
-            speed: (0.3 + Math.random() * 0.7) * sp.speed,
-            tailPhase: Math.random() * Math.PI * 2,
-            size: sp.size * (0.7 + Math.random() * 0.6),
-            bobPhase: Math.random() * Math.PI * 2,
-            bobAmount: 0.5 + Math.random() * 1.5
-        });
-    }
-}
+log('Step 5: Starting animation...');
 
-function createBubbles() {
-    for (var i = 0; i < 80; i++) {
-        bubbles.push({
-            x: Math.random() * width,
-            y: height + 10 + Math.random() * 200,
-            size: 1 + Math.random() * 4,
-            speed: 0.3 + Math.random() * 0.7,
-            wobblePhase: Math.random() * Math.PI * 2,
-            opacity: 0.2 + Math.random() * 0.3
-        });
-    }
-}
-
-function drawFish(f, t) {
-    var tailWag = Math.sin(t * 12 + f.tailPhase) * 0.4;
-    var s = f.size;
-    var bodyColor = f.species.color;
-    var stripeColor = f.species.stripe;
-    
-    ctx.save();
-    ctx.translate(f.x, f.y);
-    ctx.rotate(f.angle);
-    
-    // Body
-    ctx.fillStyle = bodyColor;
-    ctx.beginPath();
-    ctx.ellipse(0, 0, 15 * s, 8 * s, 0, 0, Math.PI * 2);
-    ctx.fill();
-    
-    // Head
-    ctx.beginPath();
-    ctx.ellipse(12 * s, 0, 6 * s, 7 * s, 0, 0, Math.PI * 2);
-    ctx.fill();
-    
-    // Tail
-    ctx.fillStyle = stripeColor;
-    ctx.beginPath();
-    ctx.moveTo(-12 * s, 0);
-    ctx.lineTo(-22 * s, -8 * s + tailWag * 12 * s);
-    ctx.lineTo(-22 * s, 8 * s + tailWag * 12 * s);
-    ctx.closePath();
-    ctx.fill();
-    
-    // Dorsal fin
-    ctx.beginPath();
-    ctx.moveTo(-2 * s, -8 * s);
-    ctx.lineTo(5 * s, -15 * s);
-    ctx.lineTo(10 * s, -8 * s);
-    ctx.closePath();
-    ctx.fill();
-    
-    // Pectoral fin
-    ctx.beginPath();
-    ctx.ellipse(5 * s, 5 * s, 4 * s, 2 * s, Math.PI * 0.3, 0, Math.PI * 2);
-    ctx.fill();
-    
-    // Eyes
-    ctx.fillStyle = '#ffffff';
-    ctx.beginPath();
-    ctx.arc(14 * s, -2 * s, 2.5 * s, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.fillStyle = '#000000';
-    ctx.beginPath();
-    ctx.arc(14.5 * s, -2 * s, 1.5 * s, 0, Math.PI * 2);
-    ctx.fill();
-    
-    ctx.restore();
-}
-
-function onMouseMove(e) {
-    var rect = canvas.getBoundingClientRect();
-    var mx = e.clientX - rect.left;
-    var my = e.clientY - rect.top;
-    
-    var hovered = null;
-    for (var i = 0; i < fishes.length; i++) {
-        var f = fishes[i];
-        var dx = mx - f.x;
-        var dy = my - f.y;
-        if (Math.sqrt(dx * dx + dy * dy) < 30 * f.size) {
-            hovered = f;
-            break;
-        }
-    }
-    
-    var infoPanel = document.getElementById('info-panel');
-    if (hovered) {
-        var sp = hovered.species;
-        infoPanel.querySelector('.fish-name').textContent = sp.name;
-        infoPanel.querySelector('.fish-detail').textContent = sp.latin;
-        infoPanel.classList.add('visible');
-        document.getElementById('species-label').textContent = 'Species: ' + sp.name;
-    } else {
-        infoPanel.classList.remove('visible');
-        document.getElementById('species-label').textContent = 'Hover over fish to identify species';
-    }
-}
-
-function animate(timestamp) {
-    if (!lastTime) lastTime = timestamp;
-    var delta = Math.min((timestamp - lastTime) / 1000, 0.1);
-    lastTime = timestamp;
-    
-    // Draw environment first
-    drawBackground();
-    drawSand();
-    
-    if (!paused) {
-        time += delta * timeScale;
-        
-        // Update fish
-        for (var i = 0; i < fishes.length; i++) {
-            var f = fishes[i];
-            f.x += Math.cos(f.angle) * f.speed * delta * 60;
-            f.y += Math.sin(f.angle * 0.5) * f.speed * delta * 30 + Math.sin(time * 2 + f.bobPhase) * f.bobAmount * delta * 10;
-            
-            if (f.x > width + 50) f.x = -50;
-            if (f.x < -50) f.x = width + 50;
-            if (f.y > height * 0.85) f.angle = -Math.abs(f.angle) * 0.8;
-            if (f.y < height * 0.15) f.angle = Math.abs(f.angle) * 0.8;
-            
-            drawFish(f, time);
-        }
-        
-        // Update bubbles
-        for (var j = 0; j < bubbles.length; j++) {
-            var b = bubbles[j];
-            b.y -= b.speed * delta * 60;
-            b.x += Math.sin(time * 3 + b.wobblePhase) * 0.3;
-            
-            if (b.y < -10) {
-                b.y = height + 10;
-                b.x = Math.random() * width;
-            }
-            
-            ctx.strokeStyle = 'rgba(200, 230, 255, ' + b.opacity + ')';
-            ctx.lineWidth = 0.5;
-            ctx.beginPath();
-            ctx.arc(b.x, b.y, b.size, 0, Math.PI * 2);
-            ctx.stroke();
-        }
-    }
-    
-    // FPS counter
-    fps++;
-    if (time >= 1) {
-        document.getElementById('fps-counter').textContent = Math.round(fps / time) + ' FPS';
-        fps = 0;
-        time = 0;
-    }
-    
-    requestAnimationFrame(animate);
-}
-
-function drawBackground() {
-    var gradient = ctx.createLinearGradient(0, 0, 0, height);
-    gradient.addColorStop(0, '#001a33');
-    gradient.addColorStop(0.5, '#003366');
-    gradient.addColorStop(1, '#002244');
-    ctx.fillStyle = gradient;
+function draw() {
+    ctx.fillStyle = '#001a33';
     ctx.fillRect(0, 0, width, height);
     
-    // Light rays
-    ctx.globalAlpha = 0.03;
-    ctx.fillStyle = '#88bbff';
-    for (var i = 0; i < 5; i++) {
-        var x = width * 0.2 + i * width * 0.15;
-        var sway = Math.sin(time * 0.3 + i) * 20;
+    for (var i = 0; i < fishes.length; i++) {
+        fishes[i].x += (Math.random() - 0.5) * 2;
+        fishes[i].y += (Math.random() - 0.5) * 2;
+        
+        ctx.fillStyle = fishes[i].color;
         ctx.beginPath();
-        ctx.moveTo(x + sway, 0);
-        ctx.lineTo(x - 30 + sway, height);
-        ctx.lineTo(x + 30 + sway, height);
-        ctx.closePath();
+        ctx.ellipse(fishes[i].x, fishes[i].y, 15, 10, 0, 0, Math.PI * 2);
         ctx.fill();
     }
-    ctx.globalAlpha = 1;
+    
+    fps++;
+    requestAnimationFrame(draw);
 }
 
-function drawSand() {
-    ctx.fillStyle = '#c4a45a';
-    ctx.beginPath();
-    ctx.moveTo(0, height);
-    for (var x = 0; x <= width; x += 20) {
-        var h = Math.sin(x * 0.01) * 10 + Math.cos(x * 0.005) * 5;
-        ctx.lineTo(x, height - 40 + h);
-    }
-    ctx.lineTo(width, height);
-    ctx.closePath();
-    ctx.fill();
-}
+draw();
+log('Step 6: Animation started - should see colored ellipses moving');
 
-// Start when DOM is ready
-if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', init);
-} else {
-    init();
-}
+window.addEventListener('resize', function() {
+    width = canvas.width = window.innerWidth;
+    height = canvas.height = window.innerHeight;
+    log('Resized to ' + width + 'x' + height);
+});
 </script>
 </body>
 </html>
