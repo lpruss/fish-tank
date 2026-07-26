@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html>
+<head><title>Test WebGL</title></head>
+<body>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script>
+console.log('Three.js loaded:', typeof THREE !== 'undefined');
+try {
+    const canvas = document.createElement('canvas');
+    const gl = canvas.getContext('webgl');
+    console.log('WebGL support:', gl ? 'YES' : 'NO');
+    
+    const scene = new THREE.Scene();
+    console.log('Scene created');
+    
+    const camera = new THREE.PerspectiveCamera(75, window.innerWidth/window.innerHeight, 0.1, 1000);
+    console.log('Camera created');
+    
+    const renderer = new THREE.WebGLRenderer({canvas: canvas});
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    console.log('Renderer created');
+    
+    document.body.appendChild(renderer.domElement);
+    console.log('Canvas appended to body');
+    
+    const geometry = new THREE.BoxGeometry();
+    const material = new THREE.MeshBasicMaterial({color: 0x00ff00});
+    const cube = new THREE.Mesh(geometry, material);
+    scene.add(cube);
+    console.log('Object added to scene');
+    
+    camera.position.z = 5;
+    
+    function animate() {
+        requestAnimationFrame(animate);
+        cube.rotation.x += 0.01;
+        cube.rotation.y += 0.01;
+        renderer.render(scene, camera);
+    }
+    animate();
+    console.log('Animation started');
+} catch(e) {
+    console.error('ERROR:', e.message, e.stack);
+}
+</script>
+</body>
+</html>
